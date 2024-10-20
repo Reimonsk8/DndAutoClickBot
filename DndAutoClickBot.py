@@ -1,9 +1,9 @@
 import discord
 from discord.ext import commands
 import pyautogui
-import asyncio
 import json
 import logging
+import sys
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -29,10 +29,13 @@ def load_allowed_users():
             allowed_users = json.load(f)
     except FileNotFoundError:
         logger.info("Allowed users file not found. Using default.")
-        allowed_users = ['reimonsk8', 'tolec', 'Admin']
+        allowed_users = ['reimonsk8', 'tolec21', 'Admin', 'bazanator']
     except json.JSONDecodeError:
         logger.error("Failed to decode allowed users file. Using default.")
-        allowed_users = ['reimonsk8', 'tolec', 'Admin']
+        allowed_users = ['reimonsk8', 'bazanator', 'tolec21', 'Admin']
+    except Exception as e:
+        logger.error(f"An error occurred while loading allowed users: {e}")
+        raise
 
 def save_allowed_users():
     global allowed_users
@@ -42,7 +45,15 @@ def save_allowed_users():
     except IOError as e:
         logger.error(f"Failed to save allowed users: {e}")
 
-load_allowed_users()
+try:
+    load_allowed_users()
+except FileNotFoundError:
+    print("Warning: allowed_users.txt file not found. Using default values.")
+    allowed_users = ['reimonsk8', 'bazanator', 'tolec21', 'Admin']
+except Exception as e:
+    print(f"Error loading allowed users: {str(e)}")
+    # You might want to stop the bot here or take some other action
+    sys.exit(1)
 
 @bot.event
 async def on_ready():
@@ -297,9 +308,16 @@ async def clear(ctx):
         await verify_discord_channel_user(ctx)
     except NotAuthorized as e:
         return await ctx.send(str(e))
+    
     view = discord.ui.View(timeout=300)
     delete_button = discord.ui.Button(label="Delete Messages", style=discord.ButtonStyle.primary)
-    delete_button.callback = lambda interaction: asyncio.run_coroutine_threadsafe(delete_bot_messages(interaction, ctx.channel.id), bot.loop)
+    # Define the callback as a coroutine
+    async def delete_callback(interaction):
+        await delete_bot_messages(interaction, ctx.channel.id, ctx)
+    
+    # Use a coroutine for the callback
+    delete_button.callback = delete_callback
+    
     view.add_item(delete_button)
     
     try:
@@ -307,11 +325,11 @@ async def clear(ctx):
     except Exception as e:
         print(f"Error sending message: {e}")
 
-async def delete_bot_messages(interaction, channel_id):
+async def delete_bot_messages(interaction, channel_id, ctx):
     guild = interaction.guild
     channel = guild.get_channel(channel_id)
     
-    async for msg in channel.history(limit=None):
+    async for msg in channel.history(limit=20):
         if msg.author == bot.user or msg.author == interaction.user:
             try:
                 await msg.delete()
@@ -320,7 +338,9 @@ async def delete_bot_messages(interaction, channel_id):
                 print(f"Error deleting message {msg.id}: {e}")
     
     try:
-        await interaction.followup.send(f"All messages from {interaction.user} deleted from {channel.name}", ephemeral=True)
+        print(f"{ctx.author.name} All messages from {interaction.user} deleted from {channel.name}")
+        #await ctx.send(f"{ctx.author.name} All messages from {interaction.user} deleted from {channel.name}")
+        #await interaction.followup.send(f"All messages from {interaction.user} deleted from {channel.name}", ephemeral=True)
     except Exception as e:
         print(f"Error sending follow-up message: {e}")
 
