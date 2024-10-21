@@ -1,17 +1,21 @@
 import discord
 from discord.ext import commands
 import pyautogui
-import json
 import logging
-import sys
+import os
 from dotenv import load_dotenv
+
 load_dotenv()
 
-import os
+global discord_username
+discord_username = ''
+global users_can_control_me
+users_can_control_me = False
+global run_code_its_me
+run_code_its_me = False
 
 intents = discord.Intents.default()
 intents.message_content = True
-
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 logging.basicConfig(level=logging.INFO)
@@ -20,172 +24,100 @@ logger = logging.getLogger(__name__)
 class NotAuthorized(Exception):
     pass
 
-allowed_users = []
-
-def load_allowed_users():
-    global allowed_users
-    try:
-        with open('allowed_users.txt', 'r') as f:
-            allowed_users = json.load(f)
-    except FileNotFoundError:
-        logger.info("Allowed users file not found. Using default.")
-        allowed_users = ['reimonsk8', 'tolec21', 'Admin', 'bazanator']
-    except json.JSONDecodeError:
-        logger.error("Failed to decode allowed users file. Using default.")
-        allowed_users = ['reimonsk8', 'bazanator', 'tolec21', 'Admin']
-    except Exception as e:
-        logger.error(f"An error occurred while loading allowed users: {e}")
-        raise
-
-def save_allowed_users():
-    global allowed_users
-    try:
-        with open('allowed_users.txt', 'w') as f:
-            json.dump(allowed_users, f)
-    except IOError as e:
-        logger.error(f"Failed to save allowed users: {e}")
-
-try:
-    load_allowed_users()
-except FileNotFoundError:
-    print("Warning: allowed_users.txt file not found. Using default values.")
-    allowed_users = ['reimonsk8', 'bazanator', 'tolec21', 'Admin']
-except Exception as e:
-    print(f"Error loading allowed users: {str(e)}")
-    # You might want to stop the bot here or take some other action
-    sys.exit(1)
-
 @bot.event
 async def on_ready():
     print(f'{bot.user} has connected to Discord!')
     print('Bot is ready!')
     print(f'Connected to {len(bot.guilds)} guild(s):')
     
+    # Get and print the bot's username
+    bot_username = bot.user.name
+    bot_discriminator = bot.user.discriminator
+    full_bot_username = f"{bot_username}#{bot_discriminator}"
+    
+    print(f"My username is: {full_bot_username}")
+    
     for guild in bot.guilds:
         print(f'- {guild.name}')
 
+    # Ask for the username
+    global discord_username
+    discord_username = input("Please enter your Discord username (without the discriminator): ")
+    print(f"Discord username set to: {discord_username}")
+
 async def verify_discord_channel_user(ctx):
     #print(f'{ctx.author, " is in " ,allowed_users} has connected to Discord!')
+    '''
     if str(ctx.author) not in allowed_users:
         raise NotAuthorized(f"{ctx.author} Only authorized users can use this command.")
+    '''
     if ctx.author not in ctx.guild.members:
         raise NotAuthorized(f"You must be a member of {ctx.guild.name} to use this command.")
 
-@bot.command(name="manageusers")
-@commands.has_permissions(administrator=True)
-async def manage_allowed_users(ctx):
-    try:
-        await verify_discord_channel_user(ctx)
-    except NotAuthorized as e:
-        return await ctx.send(str(e), delete_after=10)
 
-    view = ManageUsersView(ctx)
-    await ctx.send("Manage Allowed Users", view=view)
-
-class ManageUsersView(discord.ui.View):
-    def __init__(self, ctx):
-        super().__init__()
-        self.ctx = ctx
-        self.allowed_users = allowed_users.copy()
-
-    @discord.ui.button(label="Add User", style=discord.ButtonStyle.green)
-    async def add_user(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(AddUserModal(self.ctx))
-
-    @discord.ui.button(label="Remove User", style=discord.ButtonStyle.red)
-    async def remove_user(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(RemoveUserModal(self.ctx, self.allowed_users))
-
-class AddUserModal(discord.ui.Modal):
-    def __init__(self, ctx):
-        super().__init__(title="Add User")
-        self.add_item(discord.ui.TextInput(label="Username", placeholder="Enter username", min_length=1, max_length=32))
-        self.ctx = ctx
-
-    async def callback(self, interaction: discord.Interaction):
-        username = self.children[0].value.strip().lower()
-        global allowed_users
-        
-        if len(username) > 32:
-            return await interaction.response.send_message("Username too long. Maximum length is 32 characters.", ephemeral=True)
-        
-        if username not in allowed_users:
-            allowed_users.append(username)
-            save_allowed_users()
-            
-            embed = discord.Embed(title="Success!", description=f"{username} added to allowed users.", color=discord.Color.green())
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            await self.ctx.send(f"{username} has been added to the allowed users list.", delete_after=10)
-        else:
-            embed = discord.Embed(title="Error", description=f"{username} is already in the allowed users list.", color=discord.Color.red())
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-
-class RemoveUserModal(discord.ui.Modal):
-    def __init__(self, ctx, allowed_users):
-        super().__init__(title="Remove User")
-        self.add_item(discord.ui.TextInput(label="Username", placeholder="Enter username", min_length=1, max_length=32))
-        self.ctx = ctx
-        self.allowed_users = allowed_users
-
-    async def callback(self, interaction: discord.Interaction):
-        username = self.children[0].value.strip().lower()
-        global allowed_users
-        
-        if len(username) > 32:
-            return await interaction.response.send_message("Username too long. Maximum length is 32 characters.", ephemeral=True)
-        
-        if username in allowed_users:
-            allowed_users.remove(username)
-            save_allowed_users()
-            
-            embed = discord.Embed(title="Success!", description=f"{username} removed from allowed users.", color=discord.Color.green())
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            await self.ctx.send(f"{username} has been removed from the allowed users list.", delete_after=10)
-        else:
-            embed = discord.Embed(title="Error", description=f"{username} is not in the allowed users list.", color=discord.Color.red())
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+async def its_me(ctx):
+    global discord_username
+    global run_code_its_me
+    if str(ctx.author) == discord_username:
+        run_code_its_me = True
+    else:
+        run_code_its_me = False
+        print(f"expected: {discord_username} to match -> {ctx.author}")
 
 @bot.command(name="listusers")
 async def list_allowed_users(ctx):
-    embed = discord.Embed(title="Allowed Users", description="\n".join(allowed_users), color=discord.Color.blue())
-    await ctx.send(embed=embed, delete_after=30)
-
-def save_allowed_users():
-    with open('allowed_users.txt', 'w') as f:
-        json.dump(allowed_users, f)
-
-@bot.event
-async def on_member_join(member):
-    rules_channel = discord.utils.get(member.guild.channels, name='rules')
-    
-    if rules_channel:
-        embed = discord.Embed(title="Welcome to Our Server!", description=f"Hello {member.name}!")
-        embed.add_field(name="Available Commands:", value="""
-        !download - Download, install and run the client
-        !ready - Set everybody ready for the dungeon
-        !meds - Automatically purchases meds.
-        !clear - Creates a button to delete all bot messages in the channel.
-        """, inline=False)
-        embed.add_field(name="For More Details:", value="Type !info for more information!", inline=False)
+    try:
+        await its_me(ctx)
+        if not run_code_its_me: return
         
-        await rules_channel.send(embed=embed)
-    else:
-        print(f"No channel named 'rules' found in {member.guild.name}")
+        guild = ctx.guild
+        role = discord.utils.get(guild.roles, name="DnDAutoClickBotUser")  
+        if role is None:
+            await ctx.send("The role 'DnDAutoClickBotUser' does not exist in this server.", delete_after=10)
+            return
+        # Get all members with the role
+        users_with_role = [member.name for member in guild.members if role in member.roles]
+        # Create an embed with the list of users
+        embed = discord.Embed(title=f"Users with '{role.name}' Role", description="\n".join(users_with_role), color=discord.Color.blue())
+        # Add some additional fields to the embed
+        embed.add_field(name="Total Users", value=str(len(users_with_role)), inline=False)
+        embed.add_field(name="Role ID", value=str(role.id), inline=False)
+        await ctx.send(embed=embed, delete_after=30)
+    
+    except NotAuthorized as e:
+        await ctx.send(f"Sorry, you don't have permission to view the list of allowed users.\n\nError: {str(e)}", delete_after=10)
 
 @bot.command(name="download")
-async def hello_download(ctx):
-    await ctx.send('Download latest DND Ready Bot at https://www.reimondev.com/projects')
+async def download(ctx):
+    try:
+        await its_me(ctx)
+        if not run_code_its_me: return
+        await ctx.send('Download latest DND Ready Bot at https://www.reimondev.com/projects')
+    except NotAuthorized as e:
+        await ctx.send(f"Sorry, you don't have permission to download the client.\n\nError: {str(e)}", delete_after=10)
 
 @bot.command(name="update")
-async def hello_update(ctx):
-    await ctx.send('Download latest DND Ready Bot at https://www.reimondev.com/projects')
+async def update(ctx):
+    try:
+        await its_me(ctx)
+        if not run_code_its_me: return
+        await ctx.send('Download latest DND Ready Bot at https://www.reimondev.com/projects')
+    except NotAuthorized as e:
+        await ctx.send(f"Sorry, you don't have permission to download the client.\n\nError: {str(e)}", delete_after=10)
 
 @bot.command(name="click")
+@commands.has_any_role("DnDAutoClickBotUser","Admin")
 async def click_command(ctx, x, y):
     try:
         await verify_discord_channel_user(ctx)
     except NotAuthorized as e:
         return await ctx.send(str(e))
+    
+    global users_can_control_me
+    if not users_can_control_me:
+        await its_me(ctx)
+        if not run_code_its_me: return
+
     try:
         x = int(x)
         y = int(y)
@@ -198,7 +130,12 @@ async def click_command(ctx, x, y):
         await ctx.send(f"An error occurred: {str(e)}")
 
 @bot.command(name="move")
+@commands.has_any_role("DnDAutoClickBotUser","Admin")
 async def move_mouse_command(ctx, x, y):
+    global users_can_control_me
+    if not users_can_control_me:
+        await its_me(ctx)
+        if not run_code_its_me: return
     try:
         await verify_discord_channel_user(ctx)
     except NotAuthorized as e:
@@ -216,7 +153,12 @@ async def move_mouse_command(ctx, x, y):
         await ctx.send(f"An error occurred: {str(e)}")
 
 @bot.command(name='ready')
+@commands.has_any_role("DnDAutoClickBotUser","Admin")
 async def move_ready(ctx):
+    global users_can_control_me
+    if not users_can_control_me:
+        await its_me(ctx)
+        if not run_code_its_me: return
     try:
         await verify_discord_channel_user(ctx)
     except NotAuthorized as e:
@@ -232,7 +174,7 @@ async def move_ready(ctx):
         # Move and click Confirm
         pyautogui.moveTo(830, 650)
         pyautogui.click(830, 650)
-        await ctx.send(f"{ctx.author.name} Ready for current Dungeon")
+        await ctx.send(f"{discord_username} Ready for current Dungeon")
     except Exception as e:
         await ctx.send(f"An error occurred: {str(e)}")
 
@@ -255,7 +197,12 @@ def purchase_movements(times = 2):
     escape_current_screen()
 
 @bot.command(name="meds")
+@commands.has_any_role("DnDAutoClickBotUser","Admin")
 async def move_purchase_potions(ctx):
+    global users_can_control_me
+    if not users_can_control_me:
+        await its_me(ctx)
+        if not run_code_its_me: return
     try:
         await verify_discord_channel_user(ctx)
     except NotAuthorized as e:
@@ -290,20 +237,46 @@ async def move_purchase_potions(ctx):
     except Exception as e:
         await ctx.send(f"An error occurred: {str(e)}")
 
+@bot.command(name="control")
+@commands.has_any_role("DnDAutoClickBotUser","Admin")
+async def control(ctx):
+    await its_me(ctx)
+    if run_code_its_me:
+        global users_can_control_me
+        await ctx.send(f"{ctx.author.name} users can control me ? {'yes' if users_can_control_me else 'no'}")
+
+@bot.command(name="switch")
+@commands.has_any_role("DnDAutoClickBotUser","Admin")
+async def switch(ctx):
+    await its_me(ctx)
+    if run_code_its_me:
+        global users_can_control_me
+        users_can_control_me =  not users_can_control_me
+        await ctx.send(f"{ctx.author.name} users can control me ? {'yes' if users_can_control_me else 'no'}")
+
+
 @bot.command(name="info")
 async def info(ctx):
-    embed = discord.Embed(title="Info", description="Information about the bot:")
-    #embed.add_field(name="Command Prefix", value="!", inline=False)
-    embed.add_field(name="!download", value="Download install and run the client", inline=False)
-    embed.add_field(name="!ready", value="set everybody ready for the dungeon", inline=False)
-    embed.add_field(name="!meds", value="Purchases meds automatically.", inline=False)
-    embed.add_field(name="!clear", value="Creates a button to delete all bot messages in the channel.", inline=True)
-    embed.add_field(name="!listusers", value="to display the current list of allowed users.", inline=False)
-    embed.add_field(name="!manageusers ", value="command to administrators only.", inline=True)
-    await ctx.send(embed=embed)
+    global run_code_its_me
+    await its_me(ctx)
+    if run_code_its_me:
+        embed = discord.Embed(title="Info", description="Information about the bot:")
+        embed.add_field(name="Command Prefix", value="!", inline=False)
+        embed.add_field(name="!ready", value="set everybody ready for the dungeon", inline=False)
+        embed.add_field(name="!meds", value="Purchases meds automatically.", inline=False)
+        embed.add_field(name="!clear", value="Creates a button to delete all bot messages in the channel.", inline=True)
+        embed.add_field(name="!switch", value="switch value of users controlling your computer", inline=False)
+        embed.add_field(name="!control", value="show current value of users controlling your computer", inline=True)
+        embed.add_field(name="!listusers", value="to display the current list of allowed users.", inline=False)
+        embed.add_field(name="!download", value="Download install and run the client", inline=False)
+        await ctx.send(embed=embed)
+    
 
 @bot.command()
+@commands.has_any_role("DnDAutoClickBotUser","Admin")
 async def clear(ctx):
+    await its_me(ctx)
+    if not run_code_its_me: return
     try:
         await verify_discord_channel_user(ctx)
     except NotAuthorized as e:
@@ -330,7 +303,7 @@ async def delete_bot_messages(interaction, channel_id, ctx):
     channel = guild.get_channel(channel_id)
     
     async for msg in channel.history(limit=20):
-        if msg.author == bot.user or msg.author == interaction.user:
+        if msg.author == bot.user or msg.content.startswith("!"):
             try:
                 await msg.delete()
                 print(f"Deleted message {msg.id}")
